@@ -17,12 +17,12 @@ function setBusy(button, busy, text) {
 
 async function apiJson(url, options = {}) {
   const res = await fetch(url, options);
+  let payload;
+  try { payload = await res.json(); } catch (_) { payload = null; }
   if (!res.ok) {
-    let message = await res.text();
-    try { message = JSON.parse(message).detail || message; } catch (_) {}
-    throw new Error(message);
+    throw new Error(payload?.detail || payload?.message || ("HTTP " + res.status));
   }
-  return res.json();
+  return payload;
 }
 
 async function downloadJsonAsFile(url, payload, filename) {
@@ -43,6 +43,25 @@ async function downloadJsonAsFile(url, payload, filename) {
   a.download = filename;
   a.click();
   URL.revokeObjectURL(objectUrl);
+}
+
+function refreshIndexSuggestions() {
+  const node = el("indexSuggestions");
+  node.innerHTML = "";
+  const fields = new Set();
+
+  generatedRecords.slice(0, 20).forEach(row => {
+    Object.keys(row).filter(k => k !== "_page").forEach(k => fields.add(k));
+  });
+  masterRecords.slice(0, 20).forEach(row => {
+    Object.keys(row).filter(k => k !== "_page").forEach(k => fields.add(k));
+  });
+
+  [...fields].sort().forEach(field => {
+    const option = document.createElement("option");
+    option.value = field;
+    node.appendChild(option);
+  });
 }
 
 async function health() {
@@ -87,6 +106,7 @@ el("extractSource").addEventListener("click", async () => {
 
     el("sourcePreview").textContent = pretty(generatedRecords.slice(0, 30));
     el("downloadGenerated").disabled = generatedRecords.length === 0;
+    refreshIndexSuggestions();
   } catch (err) {
     alert(err.message);
   } finally {
@@ -123,6 +143,7 @@ el("loadMaster").addEventListener("click", async () => {
     el("masterMeta").textContent =
       masterRecords.length + " row • columns: " + (data.columns || []).join(", ");
     el("masterPreview").textContent = pretty(masterRecords.slice(0, 20));
+    refreshIndexSuggestions();
   } catch (err) {
     alert(err.message);
   } finally {
@@ -138,7 +159,7 @@ el("compare").addEventListener("click", async () => {
   if (!indexField) return alert("Tentukan index field.");
 
   const button = el("compare");
-  setBusy(button, true, "Comparing…");
+  setBusy(button, true, "Elastic comparing…");
 
   try {
     lastComparison = await apiJson("/api/compare", {
@@ -152,7 +173,7 @@ el("compare").addEventListener("click", async () => {
     });
 
     renderComparison(lastComparison);
-    el("exportComparison").disabled = false;
+    el("exportComparison").disabled = !(lastComparison.rows || []).length;
   } catch (err) {
     alert(err.message);
   } finally {
@@ -161,6 +182,10 @@ el("compare").addEventListener("click", async () => {
 });
 
 function renderComparison(data) {
+  const warningNode = el("warnings");
+  const warnings = data.warnings || [];
+  warningNode.textContent = warnings.join(" • ");
+
   const summary = el("summary");
   summary.innerHTML = "";
   Object.entries(data.summary || {}).forEach(([key, value]) => {
@@ -200,6 +225,8 @@ function renderComparison(data) {
         badge.className = "badge " + className;
         badge.textContent = row[h];
         td.appendChild(badge);
+      } else if (h === "MATCH_SCORE") {
+        td.textContent = Math.round((Number(row[h]) || 0) * 100) + "%";
       } else {
         td.textContent = row[h] ?? "";
       }
