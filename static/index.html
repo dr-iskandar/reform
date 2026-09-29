@@ -12,7 +12,7 @@
       <div>
         <span class="eyebrow">LOCAL • PRIVATE • VLM</span>
         <h1>ReForm</h1>
-        <p>Softfile → VLM lokal → Excel → dibandingkan dengan master data berdasarkan index field.</p>
+        <p>Softfile → VLM lokal → Excel → elastic comparison dengan master data.</p>
       </div>
       <div id="health" class="status">Checking Ollama…</div>
     </header>
@@ -36,8 +36,8 @@
 
     <section class="card compare-card">
       <div class="step">2</div>
-      <h2>Bandingkan dengan Master Data</h2>
-      <p>Upload master Excel/CSV lalu tentukan field yang menjadi index/key pencarian record.</p>
+      <h2>Elastic comparison dengan Master Data</h2>
+      <p>Nama field tidak harus identik. Contoh <b>TS_NAME</b>, <b>TS Name</b>, dan <b>ts-name</b> akan dipetakan otomatis. Nilai index juga bisa fuzzy untuk typo ringan.</p>
       <div class="config">
         <label>
           Master data
@@ -45,12 +45,13 @@
         </label>
         <label>
           Index field
-          <input id="indexField" placeholder="contoh: ts_name / id / no_document" />
+          <input id="indexField" list="indexSuggestions" placeholder="contoh: ts_name / id / no_document" />
+          <datalist id="indexSuggestions"></datalist>
         </label>
       </div>
       <div class="actions">
         <button id="loadMaster">Load Master</button>
-        <button id="compare" class="primary">Compare Generated vs Master</button>
+        <button id="compare" class="primary">Elastic Compare</button>
       </div>
       <div id="masterMeta" class="meta"></div>
       <pre id="masterPreview">Belum ada master data.</pre>
@@ -61,11 +62,12 @@
         <div>
           <div class="step">3</div>
           <h2>Output comparison</h2>
-          <p>File output mempertahankan kolom hasil VLM dan menambahkan STATUS serta DIFFERENT_FIELDS.</p>
+          <p>Output mempertahankan data hasil VLM dan menambah matched index, score, status, serta field yang berbeda.</p>
         </div>
         <button id="exportComparison" disabled>Download Result Excel</button>
       </div>
 
+      <div id="warnings" class="meta"></div>
       <div id="summary" class="summary"></div>
 
       <div class="table-wrap">
