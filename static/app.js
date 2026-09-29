@@ -1,5 +1,6 @@
-let sourceRecords = [];
-let targetRecords = [];
+let generatedRecords = [];
+let masterRecords = [];
+let generatedFilename = "vlm_generated.xlsx";
 let lastComparison = null;
 
 const el = (id) => document.getElementById(id);
@@ -24,6 +25,26 @@ async function apiJson(url, options = {}) {
   return res.json();
 }
 
+async function downloadJsonAsFile(url, payload, filename) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  if (!res.ok) {
+    let message = await res.text();
+    try { message = JSON.parse(message).detail || message; } catch (_) {}
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 async function health() {
   const node = el("health");
   try {
@@ -43,24 +64,29 @@ async function health() {
   }
 }
 
-async function extractFile(file) {
-  const fd = new FormData();
-  fd.append("file", file);
-  fd.append("schema_hint", el("schemaHint").value);
-  return apiJson("/api/extract", { method: "POST", body: fd });
-}
-
 el("extractSource").addEventListener("click", async () => {
   const file = el("sourceFile").files[0];
-  if (!file) return alert("Pilih dokumen sumber dulu.");
+  if (!file) return alert("Pilih softfile sumber dulu.");
+
   const button = el("extractSource");
   setBusy(button, true, "VLM sedang membaca…");
+
   try {
-    const data = await extractFile(file);
-    sourceRecords = data.records || [];
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("schema_hint", el("schemaHint").value);
+
+    const data = await apiJson("/api/extract", { method: "POST", body: fd });
+    generatedRecords = data.records || [];
+    generatedFilename = file.name.replace(/\.[^.]+$/, "") + "_generated.xlsx";
+
     el("sourceMeta").textContent =
-      data.pages_processed + " page • " + sourceRecords.length + " record • " + data.model;
-    el("sourcePreview").textContent = pretty(sourceRecords);
+      data.pages_processed + " page • " +
+      generatedRecords.length + " row • " +
+      data.model;
+
+    el("sourcePreview").textContent = pretty(generatedRecords.slice(0, 30));
+    el("downloadGenerated").disabled = generatedRecords.length === 0;
   } catch (err) {
     alert(err.message);
   } finally {
@@ -68,28 +94,35 @@ el("extractSource").addEventListener("click", async () => {
   }
 });
 
-el("loadTarget").addEventListener("click", async () => {
-  const file = el("targetFile").files[0];
-  if (!file) return alert("Pilih file pembanding dulu.");
-  const button = el("loadTarget");
-  setBusy(button, true, "Loading…");
+el("downloadGenerated").addEventListener("click", async () => {
+  if (!generatedRecords.length) return;
   try {
-    const lower = file.name.toLowerCase();
-    let data;
-    if (lower.endsWith(".csv") || lower.endsWith(".xlsx") || lower.endsWith(".xlsm")) {
-      const fd = new FormData();
-      fd.append("file", file);
-      data = await apiJson("/api/read-table", { method: "POST", body: fd });
-      targetRecords = data.records || [];
-      el("targetMeta").textContent =
-        "Master data • " + targetRecords.length + " rows • " + (data.columns || []).length + " columns";
-    } else {
-      data = await extractFile(file);
-      targetRecords = data.records || [];
-      el("targetMeta").textContent =
-        "Document B • " + data.pages_processed + " page • " + targetRecords.length + " record";
-    }
-    el("targetPreview").textContent = pretty(targetRecords.slice(0, 30));
+    await downloadJsonAsFile(
+      "/api/export-generated",
+      { records: generatedRecords, filename: generatedFilename },
+      generatedFilename
+    );
+  } catch (err) {
+    alert(err.message);
+  }
+});
+
+el("loadMaster").addEventListener("click", async () => {
+  const file = el("masterFile").files[0];
+  if (!file) return alert("Pilih master Excel/CSV dulu.");
+
+  const button = el("loadMaster");
+  setBusy(button, true, "Loading master…");
+
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    const data = await apiJson("/api/read-table", { method: "POST", body: fd });
+
+    masterRecords = data.records || [];
+    el("masterMeta").textContent =
+      masterRecords.length + " row • columns: " + (data.columns || []).join(", ");
+    el("masterPreview").textContent = pretty(masterRecords.slice(0, 20));
   } catch (err) {
     alert(err.message);
   } finally {
@@ -98,22 +131,28 @@ el("loadTarget").addEventListener("click", async () => {
 });
 
 el("compare").addEventListener("click", async () => {
-  if (!sourceRecords.length) return alert("Extract dokumen sumber dulu.");
-  if (!targetRecords.length) return alert("Load data pembanding dulu.");
+  if (!generatedRecords.length) return alert("Generate data dari softfile dulu.");
+  if (!masterRecords.length) return alert("Load master data dulu.");
+
+  const indexField = el("indexField").value.trim();
+  if (!indexField) return alert("Tentukan index field.");
+
   const button = el("compare");
   setBusy(button, true, "Comparing…");
+
   try {
     lastComparison = await apiJson("/api/compare", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        source_records: sourceRecords,
-        target_records: targetRecords,
-        match_key: el("matchKey").value.trim() || null
+        source_records: generatedRecords,
+        master_records: masterRecords,
+        index_field: indexField
       })
     });
+
     renderComparison(lastComparison);
-    el("export").disabled = false;
+    el("exportComparison").disabled = false;
   } catch (err) {
     alert(err.message);
   } finally {
@@ -131,48 +170,60 @@ function renderComparison(data) {
     summary.appendChild(span);
   });
 
+  const rows = data.rows || [];
+  const head = el("resultHead");
   const tbody = el("results");
+  head.innerHTML = "";
   tbody.innerHTML = "";
-  (data.rows || []).forEach((r) => {
+
+  if (!rows.length) return;
+
+  const headers = Object.keys(rows[0]);
+  const trHead = document.createElement("tr");
+  headers.forEach((h) => {
+    const th = document.createElement("th");
+    th.textContent = h;
+    trHead.appendChild(th);
+  });
+  head.appendChild(trHead);
+
+  rows.forEach((row) => {
     const tr = document.createElement("tr");
-    const values = [
-      r.source_row,
-      r.target_row ?? "-",
-      r.field,
-      r.source_value ?? "",
-      r.target_value ?? "",
-      Math.round((r.field_similarity || 0) * 100) + "%"
-    ];
-    values.forEach((v) => {
+    headers.forEach((h) => {
       const td = document.createElement("td");
-      td.textContent = String(v);
+      if (h === "STATUS") {
+        const badge = document.createElement("span");
+        const className =
+          row[h] === "SAME" ? "match" :
+          row[h] === "DIFFERENT" ? "mismatch" :
+          row[h] === "NOT_FOUND" ? "near_match" : "missing";
+        badge.className = "badge " + className;
+        badge.textContent = row[h];
+        td.appendChild(badge);
+      } else {
+        td.textContent = row[h] ?? "";
+      }
       tr.appendChild(td);
     });
-    const td = document.createElement("td");
-    const badge = document.createElement("span");
-    badge.className = "badge " + r.status;
-    badge.textContent = r.status;
-    td.appendChild(badge);
-    tr.appendChild(td);
     tbody.appendChild(tr);
   });
 }
 
-el("export").addEventListener("click", async () => {
+el("exportComparison").addEventListener("click", async () => {
   if (!lastComparison) return;
-  const res = await fetch("/api/export", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(lastComparison)
-  });
-  if (!res.ok) return alert("Export gagal.");
-  const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "reform_comparison.xlsx";
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    await downloadJsonAsFile(
+      "/api/export-comparison",
+      {
+        summary: lastComparison.summary,
+        rows: lastComparison.rows,
+        details: lastComparison.details
+      },
+      "reform_comparison_result.xlsx"
+    );
+  } catch (err) {
+    alert(err.message);
+  }
 });
 
 health();
