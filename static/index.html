@@ -12,7 +12,7 @@
       <div>
         <span class="eyebrow">LOCAL • PRIVATE • VLM</span>
         <h1>ReForm</h1>
-        <p>Softfile → VLM lokal → Excel → elastic comparison dengan master data.</p>
+        <p>Softfile → VLM lokal → Excel → domain-aware elastic comparison dengan master data.</p>
       </div>
       <div id="health" class="status">Checking Ollama…</div>
     </header>
@@ -37,7 +37,7 @@
     <section class="card compare-card">
       <div class="step">2</div>
       <h2>Elastic comparison dengan Master Data</h2>
-      <p>Nama field tidak harus identik. Contoh <b>TS_NAME</b>, <b>TS Name</b>, dan <b>ts-name</b> akan dipetakan otomatis. Nilai index juga bisa fuzzy untuk typo ringan.</p>
+      <p>Header dipetakan secara semantic, koordinat dinormalisasi, tanggal disetarakan, dan waktu memakai toleransi. Jika index kotor, engine dapat fallback ke kombinasi beberapa field.</p>
       <div class="config">
         <label>
           Master data
@@ -45,7 +45,7 @@
         </label>
         <label>
           Index field
-          <input id="indexField" list="indexSuggestions" placeholder="contoh: ts_name / id / no_document" />
+          <input id="indexField" list="indexSuggestions" placeholder="contoh: ts_name / latitude / id" />
           <datalist id="indexSuggestions"></datalist>
         </label>
       </div>
@@ -62,7 +62,7 @@
         <div>
           <div class="step">3</div>
           <h2>Output comparison</h2>
-          <p>Output mempertahankan data hasil VLM dan menambah matched index, score, status, serta field yang berbeda.</p>
+          <p>Output mempertahankan data hasil VLM dan menambah matched index, confidence, match mode, status, serta field yang berbeda.</p>
         </div>
         <button id="exportComparison" disabled>Download Result Excel</button>
       </div>
