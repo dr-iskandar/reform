@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ReForm — Local VLM Comparator</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <span class="eyebrow">LOCAL • PRIVATE • VLM</span>
+        <h1>ReForm</h1>
+        <p>Ekstrak data dari softcopy dokumen dengan VLM lokal, lalu bandingkan dengan master data atau dokumen lain.</p>
+      </div>
+      <div id="health" class="status">Checking Ollama…</div>
+    </header>
+
+    <section class="config card">
+      <label>
+        Schema / field hint
+        <input id="schemaHint" placeholder="contoh: kota, kecamatan, kelurahan, latitude, longitude, tanggal, ts_name" />
+      </label>
+      <label>
+        Match key (opsional)
+        <input id="matchKey" placeholder="contoh: ts_name atau id" />
+      </label>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <div class="step">1</div>
+        <h2>Dokumen sumber</h2>
+        <p>PDF atau gambar yang ingin dibaca oleh VLM.</p>
+        <input id="sourceFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp" />
+        <button id="extractSource">Extract dengan VLM</button>
+        <div id="sourceMeta" class="meta"></div>
+        <pre id="sourcePreview">Belum ada data.</pre>
+      </article>
+
+      <article class="card">
+        <div class="step">2</div>
+        <h2>Data pembanding</h2>
+        <p>Excel/CSV sebagai master data, atau PDF/gambar sebagai dokumen B.</p>
+        <input id="targetFile" type="file" accept=".csv,.xlsx,.xlsm,.pdf,.png,.jpg,.jpeg,.webp,.bmp" />
+        <button id="loadTarget">Load target</button>
+        <div id="targetMeta" class="meta"></div>
+        <pre id="targetPreview">Belum ada data.</pre>
+      </article>
+    </section>
+
+    <section class="card compare-card">
+      <div class="compare-head">
+        <div>
+          <div class="step">3</div>
+          <h2>Comparison result</h2>
+        </div>
+        <div class="actions">
+          <button id="compare" class="primary">Compare</button>
+          <button id="export" disabled>Export Excel</button>
+        </div>
+      </div>
+      <div id="summary" class="summary"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Source row</th>
+              <th>Target row</th>
+              <th>Field</th>
+              <th>Source</th>
+              <th>Target</th>
+              <th>Similarity</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="results"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
