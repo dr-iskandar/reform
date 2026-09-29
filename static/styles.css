@@ -48,3 +48,7 @@ th { color:#475467; font-size:12px; background:#fafafa; position:sticky; top:0; 
   .compare-head { align-items:flex-start; flex-direction:column; }
   h1 { font-size:40px; }
 }
+
+.index-row td { background:#f8faff; font-weight:650; }
+.empty-state { text-align:center; color:#98a2b3; padding:28px !important; }
+td:nth-child(3), td:nth-child(5) { min-width:180px; }
