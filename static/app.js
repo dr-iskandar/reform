@@ -195,43 +195,60 @@ function renderComparison(data) {
     summary.appendChild(span);
   });
 
-  const rows = data.rows || [];
-  const head = el("resultHead");
   const tbody = el("results");
-  head.innerHTML = "";
   tbody.innerHTML = "";
 
-  if (!rows.length) return;
-
-  const headers = Object.keys(rows[0]);
-  const trHead = document.createElement("tr");
-  headers.forEach((h) => {
-    const th = document.createElement("th");
-    th.textContent = h;
-    trHead.appendChild(th);
-  });
-  head.appendChild(trHead);
-
-  rows.forEach((row) => {
+  const details = data.details || [];
+  if (!details.length) {
     const tr = document.createElement("tr");
-    headers.forEach((h) => {
+    const td = document.createElement("td");
+    td.colSpan = 8;
+    td.textContent = "Belum ada detail perbandingan.";
+    td.className = "empty-state";
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
+  }
+
+  details.forEach((r) => {
+    const tr = document.createElement("tr");
+    if (r.is_index) tr.classList.add("index-row");
+
+    const score = Math.round((Number(r.value_match_score) || 0) * 100) + "%";
+    const values = [
+      r.source_row ?? "-",
+      r.generated_field ?? "",
+      r.generated_value ?? "",
+      r.master_field ?? "",
+      r.master_value ?? "",
+    ];
+
+    values.forEach((v) => {
       const td = document.createElement("td");
-      if (h === "STATUS") {
-        const badge = document.createElement("span");
-        const className =
-          row[h] === "SAME" ? "match" :
-          row[h] === "DIFFERENT" ? "mismatch" :
-          row[h] === "NOT_FOUND" ? "near_match" : "missing";
-        badge.className = "badge " + className;
-        badge.textContent = row[h];
-        td.appendChild(badge);
-      } else if (h === "MATCH_SCORE") {
-        td.textContent = Math.round((Number(row[h]) || 0) * 100) + "%";
-      } else {
-        td.textContent = row[h] ?? "";
-      }
+      td.textContent = String(v);
       tr.appendChild(td);
     });
+
+    const statusTd = document.createElement("td");
+    const badge = document.createElement("span");
+    const status = r.status || "";
+    const className =
+      status === "SAME" ? "match" :
+      status === "DIFFERENT" ? "mismatch" :
+      status === "NOT_FOUND" ? "near_match" : "missing";
+    badge.className = "badge " + className;
+    badge.textContent = status;
+    statusTd.appendChild(badge);
+    tr.appendChild(statusTd);
+
+    const modeTd = document.createElement("td");
+    modeTd.textContent = r.comparison_mode || r.record_match_mode || "";
+    tr.appendChild(modeTd);
+
+    const scoreTd = document.createElement("td");
+    scoreTd.textContent = score;
+    tr.appendChild(scoreTd);
+
     tbody.appendChild(tr);
   });
 }
