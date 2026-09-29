@@ -4,7 +4,7 @@ import io
 from pathlib import Path
 from typing import List
 
-import fitz
+import pymupdf as fitz
 from PIL import Image
 
 
