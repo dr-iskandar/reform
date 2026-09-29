@@ -62,7 +62,7 @@
         <div>
           <div class="step">3</div>
           <h2>Output comparison</h2>
-          <p>Output mempertahankan data hasil VLM dan menambah matched index, confidence, match mode, status, serta field yang berbeda.</p>
+          <p>Setiap field ditampilkan berdampingan: hasil VLM vs nilai master, lengkap dengan status perbandingan.</p>
         </div>
         <button id="exportComparison" disabled>Download Result Excel</button>
       </div>
@@ -72,7 +72,18 @@
 
       <div class="table-wrap">
         <table>
-          <thead id="resultHead"></thead>
+          <thead>
+            <tr>
+              <th>Row</th>
+              <th>Generated Field</th>
+              <th>Generated Value</th>
+              <th>Master Field</th>
+              <th>Master Value</th>
+              <th>Status</th>
+              <th>Mode</th>
+              <th>Score</th>
+            </tr>
+          </thead>
           <tbody id="results"></tbody>
         </table>
       </div>
