@@ -1,81 +1,86 @@
-# ReForm — Local VLM Document Comparator
+# ReForm — Local VLM → Excel → Master Data Comparison
 
-MVP untuk membaca softcopy dokumen menggunakan **Vision Language Model lokal**, mengubah isi dokumen menjadi data terstruktur, lalu membandingkannya dengan:
+ReForm adalah sample app untuk workflow dokumen berikut:
 
-1. **Master data** dalam CSV/XLSX, atau
-2. **Dokumen lain** (PDF / image) yang juga diekstrak oleh VLM.
+1. **Membaca softfile** (PDF / image) menggunakan VLM lokal.
+2. **Populate hasil ekstraksi menjadi Excel**.
+3. **Membandingkan hasil tersebut dengan master data** Excel/CSV.
+4. User menentukan **index field** yang dipakai untuk mencari record yang sama.
+5. Output berupa **Excel hasil comparison** dengan tambahan kolom:
+   - `STATUS`
+   - `DIFFERENT_FIELDS`
 
-Semua inference VLM berjalan lewat **Ollama lokal**. Dokumen tidak perlu dikirim ke cloud.
+Status utama:
+- `SAME` — record ditemukan di master dan semua common field sama.
+- `DIFFERENT` — record ditemukan tetapi minimal satu field berbeda.
+- `NOT_FOUND` — nilai index dari hasil VLM tidak ditemukan di master.
+- `INDEX_EMPTY` — index field pada hasil VLM kosong.
 
 ## Flow
 
 ```
-Document A (PDF/Image)
+Softfile PDF/Image
         |
         v
-Local VLM via Ollama
+Local VLM (Ollama)
         |
         v
-Structured JSON
+Structured records
         |
-        +----------------------+
-        |                      |
-        v                      v
-Master CSV/XLSX          Document B
-                               |
-                               v
-                         Local VLM
-                               |
-                               v
-                         Structured JSON
-        |                      |
-        +----------+-----------+
-                   v
-             Comparison Engine
-                   |
-                   v
-       Match / Near match / Mismatch
-                   |
-                   v
-              Export Excel
+        v
+Generated Excel
+        |
+        | index field
+        v
+Master Excel / CSV
+        |
+        v
+Comparison Engine
+        |
+        v
+Result Excel
+  + STATUS
+  + DIFFERENT_FIELDS
+        |
+        +--> Detail sheet
+        +--> Summary sheet
 ```
 
-## Model
+Comparison hanya membandingkan field dengan **nama kolom yang sama** antara generated data dan master data. Index field dipakai untuk lookup record dan tidak ikut dinilai sebagai field comparison.
 
-Default:
+## Local VLM
+
+Default model:
 
 ```bash
 qwen2.5vl:7b
 ```
 
-Model dapat diganti melalui environment variable, misalnya:
+Konfigurasi ada di `.env.example`:
 
 ```bash
-export OLLAMA_MODEL=gemma3:4b
+OLLAMA_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5vl:7b
+MAX_PAGES=8
 ```
-
-Untuk dokumen, tabel, tulisan kecil, dan OCR-like extraction, gunakan model vision yang cukup kuat dan sesuaikan dengan GPU/RAM yang tersedia.
 
 ## Setup
 
-Pastikan Ollama sudah terpasang dan berjalan.
-
 ```bash
+git clone https://github.com/dr-iskandar/reform.git
+cd reform
+
 ollama pull qwen2.5vl:7b
 ollama serve
 ```
 
-Buat virtual environment:
+Terminal lain:
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-```
 
-Jalankan aplikasi:
-
-```bash
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
@@ -85,54 +90,35 @@ Buka:
 http://localhost:8000
 ```
 
-## Cara pakai
+## Output Excel
 
-- Upload **Dokumen Sumber**.
-- Opsional isi **Schema / field hint**, misalnya:
-  `kota, kecamatan, kelurahan, latitude, longitude, tanggal, ts_name`.
-- Klik **Extract dengan VLM**.
-- Upload file pembanding:
-  - CSV/XLSX = dianggap sebagai master data.
-  - PDF/JPG/PNG = dianggap sebagai Document B dan diekstrak oleh VLM.
-- Opsional isi **Match key**, misalnya `id`, `ts_name`, atau nomor dokumen.
-- Klik **Compare**.
-- Hasil dapat diexport menjadi Excel.
+### Sheet `Result`
+Berisi data hasil VLM dengan tambahan:
 
-## Status comparison
+| ...generated columns | STATUS | DIFFERENT_FIELDS |
+|---|---|---|
+| ... | SAME | |
+| ... | DIFFERENT | latitude, job_status |
+| ... | NOT_FOUND | |
 
-- `match`: nilai sama.
-- `near_match`: nilai sangat mirip.
-- `mismatch`: nilai berbeda.
-- `missing`: salah satu sisi kosong.
-- `empty`: kedua sisi kosong.
+### Sheet `Detail`
+Audit per field:
 
-## Struktur
+| index_value | field | generated_value | master_value | status |
+|---|---|---|---|---|
 
-```
-backend/
-  main.py        FastAPI endpoints
-  vlm.py         Ollama + VLM extraction
-  document.py    PDF/image rendering
-  compare.py     matching & comparison engine
+### Sheet `Summary`
+Jumlah SAME, DIFFERENT, NOT_FOUND, INDEX_EMPTY, dan statistik lainnya.
 
-static/
-  index.html
-  app.js
-  styles.css
-```
+## Catatan MVP
 
-## Scope MVP
+Saat ini matching mengharuskan nama `index_field` sama di generated data dan master. Field yang dibandingkan juga menggunakan nama kolom yang sama.
 
-Saat ini input dokumen vision mendukung PDF dan image. Master data mendukung CSV dan XLSX.
-
-Tahap selanjutnya yang masuk akal untuk production:
-- schema extraction per jenis dokumen,
-- confidence/evidence per field,
-- bounding box / source page evidence,
-- field mapping master-data vs dokumen,
-- batch processing banyak file,
-- review queue untuk field confidence rendah,
-- audit trail hasil VLM,
-- database master data,
-- rule engine untuk toleransi numeric/date,
-- model fallback atau OCR+VLM hybrid.
+Next step yang cocok untuk production:
+- field mapping jika nama kolom berbeda,
+- tolerance per field (mis. koordinat, nominal, tanggal),
+- confidence VLM,
+- evidence page/bounding box,
+- batch banyak softfile,
+- review queue untuk hasil berbeda,
+- audit trail.
