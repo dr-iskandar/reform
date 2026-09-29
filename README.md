@@ -1,67 +1,62 @@
-# ReForm — Local VLM → Excel → Master Data Comparison
+# ReForm — Local VLM → Excel → Elastic Master Comparison
 
-ReForm adalah sample app untuk workflow dokumen berikut:
+Workflow:
 
-1. **Membaca softfile** (PDF / image) menggunakan VLM lokal.
-2. **Populate hasil ekstraksi menjadi Excel**.
-3. **Membandingkan hasil tersebut dengan master data** Excel/CSV.
-4. User menentukan **index field** yang dipakai untuk mencari record yang sama.
-5. Output berupa **Excel hasil comparison** dengan tambahan kolom:
-   - `STATUS`
-   - `DIFFERENT_FIELDS`
+1. Softfile PDF/image dibaca oleh VLM lokal.
+2. Hasil extraction menjadi structured records dan dapat diexport ke Excel.
+3. Master data dimuat dari Excel/CSV.
+4. User menentukan index field.
+5. Comparison engine melakukan **elastic mapping**:
+   - nama header tidak perlu identik,
+   - index string boleh memiliki typo ringan,
+   - tanggal dinormalisasi,
+   - angka memakai tolerance,
+   - latitude/longitude memakai tolerance kecil,
+   - text comparison memakai fuzzy similarity.
+6. Output Excel ditambah `MATCHED_MASTER_INDEX`, `MATCH_SCORE`, `STATUS`, dan `DIFFERENT_FIELDS`.
 
-Status utama:
-- `SAME` — record ditemukan di master dan semua common field sama.
-- `DIFFERENT` — record ditemukan tetapi minimal satu field berbeda.
-- `NOT_FOUND` — nilai index dari hasil VLM tidak ditemukan di master.
-- `INDEX_EMPTY` — index field pada hasil VLM kosong.
+## Contoh field elastic
 
-## Flow
+`TS_NAME`, `TS Name`, dan `ts-name` diperlakukan sebagai field yang sama.
 
-```
-Softfile PDF/Image
-        |
-        v
-Local VLM (Ollama)
-        |
-        v
-Structured records
-        |
-        v
-Generated Excel
-        |
-        | index field
-        v
-Master Excel / CSV
-        |
-        v
-Comparison Engine
-        |
-        v
-Result Excel
-  + STATUS
-  + DIFFERENT_FIELDS
-        |
-        +--> Detail sheet
-        +--> Summary sheet
-```
+Generated:
 
-Comparison hanya membandingkan field dengan **nama kolom yang sama** antara generated data dan master data. Index field dipakai untuk lookup record dan tidak ikut dinilai sebagai field comparison.
+| TS Name | Longitude | Job Status |
+|---|---:|---|
+| Ria Subekti | 106.62358 | Done |
+
+Master:
+
+| TS_NAME | LONGITUDE | JOB_STATUS |
+|---|---:|---|
+| RIA SUBEKTI | 106.62360 | Done |
+
+Engine akan memetakan header dan melakukan type-aware comparison tanpa mewajibkan string literal yang 100% identik.
+
+## Status
+
+- `SAME`: record ditemukan dan seluruh mapped fields dianggap sama dalam aturan elastic.
+- `DIFFERENT`: record ditemukan tetapi ada minimal satu field yang benar-benar berbeda.
+- `NOT_FOUND`: tidak ada kandidat master dengan index similarity yang cukup.
+- `INDEX_EMPTY`: index hasil VLM kosong.
+- `NOT_COMPARABLE`: index field tidak dapat dipetakan ke salah satu file.
+
+## Default threshold
+
+- Header similarity: 72%
+- Index fuzzy similarity: 82%
+- Text value similarity: 90%
+- Coordinate tolerance: 0.0002 degree
+- Numeric tolerance: max(0.01, 0.1%)
+
+Nilai ini ada di `backend/compare.py` dan mudah diubah sesuai karakter data riil.
 
 ## Local VLM
 
-Default model:
+Default:
 
 ```bash
 qwen2.5vl:7b
-```
-
-Konfigurasi ada di `.env.example`:
-
-```bash
-OLLAMA_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=qwen2.5vl:7b
-MAX_PAGES=8
 ```
 
 ## Setup
@@ -79,46 +74,14 @@ Terminal lain:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-
-uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+python -m pip install -r requirements.txt
+python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Buka:
+Buka `http://localhost:8000`.
 
-```
-http://localhost:8000
-```
+## Excel output
 
-## Output Excel
-
-### Sheet `Result`
-Berisi data hasil VLM dengan tambahan:
-
-| ...generated columns | STATUS | DIFFERENT_FIELDS |
-|---|---|---|
-| ... | SAME | |
-| ... | DIFFERENT | latitude, job_status |
-| ... | NOT_FOUND | |
-
-### Sheet `Detail`
-Audit per field:
-
-| index_value | field | generated_value | master_value | status |
-|---|---|---|---|---|
-
-### Sheet `Summary`
-Jumlah SAME, DIFFERENT, NOT_FOUND, INDEX_EMPTY, dan statistik lainnya.
-
-## Catatan MVP
-
-Saat ini matching mengharuskan nama `index_field` sama di generated data dan master. Field yang dibandingkan juga menggunakan nama kolom yang sama.
-
-Next step yang cocok untuk production:
-- field mapping jika nama kolom berbeda,
-- tolerance per field (mis. koordinat, nominal, tanggal),
-- confidence VLM,
-- evidence page/bounding box,
-- batch banyak softfile,
-- review queue untuk hasil berbeda,
-- audit trail.
+- `Result`: generated data + match/status columns.
+- `Detail`: audit per mapped field, termasuk generated/master field, score, dan comparison mode.
+- `Summary`: rekap hasil.
