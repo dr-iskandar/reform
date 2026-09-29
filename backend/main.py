@@ -163,13 +163,14 @@ def compare(payload: CompareRequest):
 def export_comparison(payload: ComparisonExportRequest):
     wb = Workbook()
 
+    # Primary output: actual side-by-side field comparison.
     ws = wb.active
-    ws.title = "Result"
-    _write_rows(ws, payload.rows)
+    ws.title = "Comparison"
+    _write_rows(ws, payload.details)
 
-    if payload.rows and "STATUS" in payload.rows[0]:
+    if payload.details and "status" in payload.details[0]:
         headers = [cell.value for cell in ws[1]]
-        status_col = headers.index("STATUS") + 1
+        status_col = headers.index("status") + 1
         fills = {
             "SAME": PatternFill("solid", fgColor="C6EFCE"),
             "DIFFERENT": PatternFill("solid", fgColor="FFC7CE"),
@@ -182,8 +183,8 @@ def export_comparison(payload: ComparisonExportRequest):
             if fill:
                 cell.fill = fill
 
-    detail_ws = wb.create_sheet("Detail")
-    _write_rows(detail_ws, payload.details)
+    record_ws = wb.create_sheet("Record Summary")
+    _write_rows(record_ws, payload.rows)
 
     summary_ws = wb.create_sheet("Summary")
     summary_ws.append(["metric", "value"])
