@@ -573,6 +573,44 @@ def compare_records(
 
         different_fields: List[str] = []
 
+        # Always expose the selected index as an explicit side-by-side comparison row.
+        if master is not None:
+            index_comparison = _compare_value(
+                source_index,
+                source_key,
+                master.get(master_index),
+                master_index,
+            )
+            detail_rows.append(
+                {
+                    "source_row": source_number,
+                    "master_row": (master_idx + 1) if master_idx is not None else None,
+                    "is_index": True,
+                    "generated_field": source_index,
+                    "master_field": master_index,
+                    "generated_value": source_key,
+                    "master_value": master.get(master_index),
+                    "value_match_score": index_comparison["score"],
+                    "comparison_mode": index_comparison["mode"],
+                    "status": "SAME" if index_comparison["same"] else "DIFFERENT",
+                }
+            )
+        else:
+            detail_rows.append(
+                {
+                    "source_row": source_number,
+                    "master_row": None,
+                    "is_index": True,
+                    "generated_field": source_index,
+                    "master_field": master_index,
+                    "generated_value": source_key,
+                    "master_value": None,
+                    "value_match_score": match_score,
+                    "comparison_mode": match_mode,
+                    "status": "INDEX_EMPTY" if not _text(source_key) else "NOT_FOUND",
+                }
+            )
+
         if not _text(source_key):
             status = "INDEX_EMPTY"
         elif master is None:
@@ -597,11 +635,7 @@ def compare_records(
                     {
                         "source_row": source_number,
                         "master_row": (master_idx + 1) if master_idx is not None else None,
-                        "index_requested": index_field,
-                        "source_index_field": source_index,
-                        "master_index_field": master_index,
-                        "index_value_generated": source_key,
-                        "index_value_master": master.get(master_index),
+                        "is_index": False,
                         "record_match_score": match_score,
                         "record_match_mode": match_mode,
                         "generated_field": source_field,
