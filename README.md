@@ -1,25 +1,138 @@
-# ReForm OCR Extractor
+# ReForm — Local VLM Document Comparator
 
-Sample web app untuk membaca data terstruktur dari softcopy dokumen/foto menggunakan OCR di browser, lalu mengekspor hasil ke Excel.
+MVP untuk membaca softcopy dokumen menggunakan **Vision Language Model lokal**, mengubah isi dokumen menjadi data terstruktur, lalu membandingkannya dengan:
 
-## Fitur
-- Upload JPG/PNG/PDF.
-- Preview halaman pertama PDF.
-- Pilih area tertentu (ROI) dengan drag mouse agar OCR fokus ke area yang dibutuhkan.
-- OCR berjalan lokal di browser menggunakan Tesseract.js.
-- Parsing otomatis field umum: Kota, Kecamatan, Kelurahan, Latitude, Longitude, Tanggal/Waktu.
-- Hasil bisa diedit manual sebelum ditambahkan ke tabel.
-- Export ke Excel (.xlsx) dan CSV.
-- Tidak ada backend; cocok untuk demo cepat.
+1. **Master data** dalam CSV/XLSX, atau
+2. **Dokumen lain** (PDF / image) yang juga diekstrak oleh VLM.
 
-## Menjalankan
-Buka `index.html` langsung di browser modern, atau jalankan static server:
+Semua inference VLM berjalan lewat **Ollama lokal**. Dokumen tidak perlu dikirim ke cloud.
 
-```bash
-python3 -m http.server 8000
+## Flow
+
+```
+Document A (PDF/Image)
+        |
+        v
+Local VLM via Ollama
+        |
+        v
+Structured JSON
+        |
+        +----------------------+
+        |                      |
+        v                      v
+Master CSV/XLSX          Document B
+                               |
+                               v
+                         Local VLM
+                               |
+                               v
+                         Structured JSON
+        |                      |
+        +----------+-----------+
+                   v
+             Comparison Engine
+                   |
+                   v
+       Match / Near match / Mismatch
+                   |
+                   v
+              Export Excel
 ```
 
-Lalu buka http://localhost:8000.
+## Model
 
-## Catatan
-Untuk produksi, OCR sebaiknya diganti/ditambah dengan engine server-side atau OCR cloud jika dokumen sangat bervariasi, resolusi rendah, atau butuh akurasi tinggi.
+Default:
+
+```bash
+qwen2.5vl:7b
+```
+
+Model dapat diganti melalui environment variable, misalnya:
+
+```bash
+export OLLAMA_MODEL=gemma3:4b
+```
+
+Untuk dokumen, tabel, tulisan kecil, dan OCR-like extraction, gunakan model vision yang cukup kuat dan sesuaikan dengan GPU/RAM yang tersedia.
+
+## Setup
+
+Pastikan Ollama sudah terpasang dan berjalan.
+
+```bash
+ollama pull qwen2.5vl:7b
+ollama serve
+```
+
+Buat virtual environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+Jalankan aplikasi:
+
+```bash
+uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Buka:
+
+```
+http://localhost:8000
+```
+
+## Cara pakai
+
+- Upload **Dokumen Sumber**.
+- Opsional isi **Schema / field hint**, misalnya:
+  `kota, kecamatan, kelurahan, latitude, longitude, tanggal, ts_name`.
+- Klik **Extract dengan VLM**.
+- Upload file pembanding:
+  - CSV/XLSX = dianggap sebagai master data.
+  - PDF/JPG/PNG = dianggap sebagai Document B dan diekstrak oleh VLM.
+- Opsional isi **Match key**, misalnya `id`, `ts_name`, atau nomor dokumen.
+- Klik **Compare**.
+- Hasil dapat diexport menjadi Excel.
+
+## Status comparison
+
+- `match`: nilai sama.
+- `near_match`: nilai sangat mirip.
+- `mismatch`: nilai berbeda.
+- `missing`: salah satu sisi kosong.
+- `empty`: kedua sisi kosong.
+
+## Struktur
+
+```
+backend/
+  main.py        FastAPI endpoints
+  vlm.py         Ollama + VLM extraction
+  document.py    PDF/image rendering
+  compare.py     matching & comparison engine
+
+static/
+  index.html
+  app.js
+  styles.css
+```
+
+## Scope MVP
+
+Saat ini input dokumen vision mendukung PDF dan image. Master data mendukung CSV dan XLSX.
+
+Tahap selanjutnya yang masuk akal untuk production:
+- schema extraction per jenis dokumen,
+- confidence/evidence per field,
+- bounding box / source page evidence,
+- field mapping master-data vs dokumen,
+- batch processing banyak file,
+- review queue untuk field confidence rendah,
+- audit trail hasil VLM,
+- database master data,
+- rule engine untuk toleransi numeric/date,
+- model fallback atau OCR+VLM hybrid.
