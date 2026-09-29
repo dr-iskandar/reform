@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>ReForm — Local VLM Comparator</title>
+  <title>ReForm — Local VLM to Excel Comparator</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
@@ -12,69 +12,65 @@
       <div>
         <span class="eyebrow">LOCAL • PRIVATE • VLM</span>
         <h1>ReForm</h1>
-        <p>Ekstrak data dari softcopy dokumen dengan VLM lokal, lalu bandingkan dengan master data atau dokumen lain.</p>
+        <p>Softfile → VLM lokal → Excel → dibandingkan dengan master data berdasarkan index field.</p>
       </div>
       <div id="health" class="status">Checking Ollama…</div>
     </header>
 
-    <section class="config card">
+    <section class="card">
+      <div class="step">1</div>
+      <h2>Baca softfile & generate Excel</h2>
+      <p>Upload PDF/gambar. VLM lokal membaca dokumen dan mem-populate data terstruktur.</p>
       <label>
-        Schema / field hint
-        <input id="schemaHint" placeholder="contoh: kota, kecamatan, kelurahan, latitude, longitude, tanggal, ts_name" />
+        Field yang ingin diekstrak
+        <input id="schemaHint" placeholder="contoh: ts_name, visit_date, longitude, latitude, job_status" />
       </label>
-      <label>
-        Match key (opsional)
-        <input id="matchKey" placeholder="contoh: ts_name atau id" />
-      </label>
+      <input id="sourceFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp" />
+      <div class="actions">
+        <button id="extractSource" class="primary">Generate data dengan VLM</button>
+        <button id="downloadGenerated" disabled>Download Generated Excel</button>
+      </div>
+      <div id="sourceMeta" class="meta"></div>
+      <pre id="sourcePreview">Belum ada data hasil ekstraksi.</pre>
     </section>
 
-    <section class="grid">
-      <article class="card">
-        <div class="step">1</div>
-        <h2>Dokumen sumber</h2>
-        <p>PDF atau gambar yang ingin dibaca oleh VLM.</p>
-        <input id="sourceFile" type="file" accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp" />
-        <button id="extractSource">Extract dengan VLM</button>
-        <div id="sourceMeta" class="meta"></div>
-        <pre id="sourcePreview">Belum ada data.</pre>
-      </article>
-
-      <article class="card">
-        <div class="step">2</div>
-        <h2>Data pembanding</h2>
-        <p>Excel/CSV sebagai master data, atau PDF/gambar sebagai dokumen B.</p>
-        <input id="targetFile" type="file" accept=".csv,.xlsx,.xlsm,.pdf,.png,.jpg,.jpeg,.webp,.bmp" />
-        <button id="loadTarget">Load target</button>
-        <div id="targetMeta" class="meta"></div>
-        <pre id="targetPreview">Belum ada data.</pre>
-      </article>
+    <section class="card compare-card">
+      <div class="step">2</div>
+      <h2>Bandingkan dengan Master Data</h2>
+      <p>Upload master Excel/CSV lalu tentukan field yang menjadi index/key pencarian record.</p>
+      <div class="config">
+        <label>
+          Master data
+          <input id="masterFile" type="file" accept=".csv,.xlsx,.xlsm" />
+        </label>
+        <label>
+          Index field
+          <input id="indexField" placeholder="contoh: ts_name / id / no_document" />
+        </label>
+      </div>
+      <div class="actions">
+        <button id="loadMaster">Load Master</button>
+        <button id="compare" class="primary">Compare Generated vs Master</button>
+      </div>
+      <div id="masterMeta" class="meta"></div>
+      <pre id="masterPreview">Belum ada master data.</pre>
     </section>
 
     <section class="card compare-card">
       <div class="compare-head">
         <div>
           <div class="step">3</div>
-          <h2>Comparison result</h2>
+          <h2>Output comparison</h2>
+          <p>File output mempertahankan kolom hasil VLM dan menambahkan STATUS serta DIFFERENT_FIELDS.</p>
         </div>
-        <div class="actions">
-          <button id="compare" class="primary">Compare</button>
-          <button id="export" disabled>Export Excel</button>
-        </div>
+        <button id="exportComparison" disabled>Download Result Excel</button>
       </div>
+
       <div id="summary" class="summary"></div>
+
       <div class="table-wrap">
         <table>
-          <thead>
-            <tr>
-              <th>Source row</th>
-              <th>Target row</th>
-              <th>Field</th>
-              <th>Source</th>
-              <th>Target</th>
-              <th>Similarity</th>
-              <th>Status</th>
-            </tr>
-          </thead>
+          <thead id="resultHead"></thead>
           <tbody id="results"></tbody>
         </table>
       </div>
