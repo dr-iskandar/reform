@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pandas as pd
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
 from pydantic import BaseModel
 
 from .compare import compare_records
@@ -18,19 +19,68 @@ from .vlm import extract_document, ollama_health
 ROOT = Path(__file__).resolve().parents[1]
 STATIC = ROOT / "static"
 
-app = FastAPI(title="ReForm Local VLM Comparator", version="0.2.0")
+app = FastAPI(title="ReForm Local VLM Comparator", version="0.3.0")
 app.mount("/static", StaticFiles(directory=str(STATIC)), name="static")
+
+
+class RecordsExportRequest(BaseModel):
+    records: List[Dict[str, Any]]
+    filename: str = "vlm_generated.xlsx"
 
 
 class CompareRequest(BaseModel):
     source_records: List[Dict[str, Any]]
-    target_records: List[Dict[str, Any]]
-    match_key: Optional[str] = None
+    master_records: List[Dict[str, Any]]
+    index_field: str
 
 
-class ExportRequest(BaseModel):
+class ComparisonExportRequest(BaseModel):
     summary: Dict[str, Any]
     rows: List[Dict[str, Any]]
+    details: List[Dict[str, Any]] = []
+
+
+def _safe_excel_value(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, (dict, list)):
+        return str(value)
+    return value
+
+
+def _workbook_response(wb: Workbook, filename: str) -> StreamingResponse:
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _write_rows(ws, rows: List[Dict[str, Any]]) -> None:
+    if not rows:
+        ws.append(["NO_DATA"])
+        return
+
+    headers: List[str] = []
+    seen = set()
+    for row in rows:
+        for key in row.keys():
+            if key not in seen:
+                seen.add(key)
+                headers.append(key)
+
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+
+    for row in rows:
+        ws.append([_safe_excel_value(row.get(h)) for h in headers])
+
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
 
 
 @app.get("/")
@@ -66,58 +116,80 @@ async def read_table(file: UploadFile = File(...)):
         elif name.endswith((".xlsx", ".xlsm", ".xltx")):
             df = pd.read_excel(io.BytesIO(raw), dtype=object)
         else:
-            raise ValueError("Master data harus CSV atau XLSX.")
+            raise ValueError("File data harus CSV atau XLSX.")
 
         df = df.where(pd.notnull(df), None)
         records = df.to_dict(orient="records")
         return {
             "filename": file.filename,
-            "columns": list(df.columns),
+            "columns": [str(c) for c in df.columns],
             "records": records,
         }
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.post("/api/compare")
-def compare(payload: CompareRequest):
-    return compare_records(
-        payload.source_records,
-        payload.target_records,
-        payload.match_key,
-    )
-
-
-@app.post("/api/export")
-def export_excel(payload: ExportRequest):
+@app.post("/api/export-generated")
+def export_generated(payload: RecordsExportRequest):
     wb = Workbook()
     ws = wb.active
-    ws.title = "Comparison"
+    ws.title = "Generated Data"
 
-    headers = [
-        "source_row",
-        "target_row",
-        "record_similarity",
-        "field",
-        "source_value",
-        "target_value",
-        "field_similarity",
-        "status",
+    rows = [
+        {k: v for k, v in row.items() if k != "_page"}
+        for row in payload.records
     ]
-    ws.append(headers)
-    for row in payload.rows:
-        ws.append([row.get(h) for h in headers])
+    _write_rows(ws, rows)
+
+    filename = payload.filename
+    if not filename.lower().endswith(".xlsx"):
+        filename += ".xlsx"
+    return _workbook_response(wb, filename)
+
+
+@app.post("/api/compare")
+def compare(payload: CompareRequest):
+    try:
+        return compare_records(
+            payload.source_records,
+            payload.master_records,
+            payload.index_field,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/export-comparison")
+def export_comparison(payload: ComparisonExportRequest):
+    wb = Workbook()
+
+    ws = wb.active
+    ws.title = "Result"
+    _write_rows(ws, payload.rows)
+
+    if payload.rows and "STATUS" in payload.rows[0]:
+        headers = [cell.value for cell in ws[1]]
+        status_col = headers.index("STATUS") + 1
+        fills = {
+            "SAME": PatternFill("solid", fgColor="C6EFCE"),
+            "DIFFERENT": PatternFill("solid", fgColor="FFC7CE"),
+            "NOT_FOUND": PatternFill("solid", fgColor="FFEB9C"),
+            "INDEX_EMPTY": PatternFill("solid", fgColor="D9E1F2"),
+        }
+        for row_idx in range(2, ws.max_row + 1):
+            cell = ws.cell(row=row_idx, column=status_col)
+            fill = fills.get(str(cell.value))
+            if fill:
+                cell.fill = fill
+
+    detail_ws = wb.create_sheet("Detail")
+    _write_rows(detail_ws, payload.details)
 
     summary_ws = wb.create_sheet("Summary")
     summary_ws.append(["metric", "value"])
+    for cell in summary_ws[1]:
+        cell.font = Font(bold=True)
     for key, value in payload.summary.items():
         summary_ws.append([key, value])
 
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return StreamingResponse(
-        output,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="reform_comparison.xlsx"'},
-    )
+    return _workbook_response(wb, "reform_comparison_result.xlsx")
