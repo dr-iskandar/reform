@@ -1,55 +1,120 @@
-# ReForm — Local VLM → Excel → Elastic Master Comparison
+# ReForm — Local VLM → Excel → Domain-aware Elastic Comparison
 
-Workflow:
+ReForm membaca softfile memakai VLM lokal, menghasilkan data Excel, lalu merekonsiliasi hasil tersebut dengan master Excel/CSV.
 
-1. Softfile PDF/image dibaca oleh VLM lokal.
-2. Hasil extraction menjadi structured records dan dapat diexport ke Excel.
-3. Master data dimuat dari Excel/CSV.
-4. User menentukan index field.
-5. Comparison engine melakukan **elastic mapping**:
-   - nama header tidak perlu identik,
-   - index string boleh memiliki typo ringan,
-   - tanggal dinormalisasi,
-   - angka memakai tolerance,
-   - latitude/longitude memakai tolerance kecil,
-   - text comparison memakai fuzzy similarity.
-6. Output Excel ditambah `MATCHED_MASTER_INDEX`, `MATCH_SCORE`, `STATUS`, dan `DIFFERENT_FIELDS`.
+## Flow
 
-## Contoh field elastic
+```
+PDF / image
+    ↓
+Local VLM
+    ↓
+Generated records / Excel
+    ↓
+Index + semantic normalization
+    ↓
+Master Excel / CSV
+    ↓
+Domain-aware comparison
+    ↓
+Result Excel
+```
 
-`TS_NAME`, `TS Name`, dan `ts-name` diperlakukan sebagai field yang sama.
+## Elastic comparison
 
-Generated:
+Engine sekarang tidak hanya melakukan fuzzy string matching.
 
-| TS Name | Longitude | Job Status |
-|---|---:|---|
-| Ria Subekti | 106.62358 | Done |
+### 1. Semantic header mapping
 
-Master:
+Contoh berikut dipetakan sebagai field yang sama:
 
-| TS_NAME | LONGITUDE | JOB_STATUS |
-|---|---:|---|
-| RIA SUBEKTI | 106.62360 | Done |
+- `date` ↔ `Visit Date`
+- `time` ↔ `Visit Hours`
+- `longitude` ↔ `Longitude`
+- `latitude` ↔ `Latitude`
+- `status` ↔ `Job Status`
+- `TS_NAME` ↔ `TS Name`
 
-Engine akan memetakan header dan melakukan type-aware comparison tanpa mewajibkan string literal yang 100% identik.
+### 2. Coordinate normalization
 
-## Status
+Kasus spreadsheet seperti:
 
-- `SAME`: record ditemukan dan seluruh mapped fields dianggap sama dalam aturan elastic.
-- `DIFFERENT`: record ditemukan tetapi ada minimal satu field yang benar-benar berbeda.
-- `NOT_FOUND`: tidak ada kandidat master dengan index similarity yang cukup.
-- `INDEX_EMPTY`: index hasil VLM kosong.
-- `NOT_COMPARABLE`: index field tidak dapat dipetakan ke salah satu file.
+```
+Generated latitude : -6.3279018
+Master Latitude    : -63279018
+```
 
-## Default threshold
+akan dicoba sebagai coordinate scale variants. Engine dapat menemukan bahwa master sebenarnya merepresentasikan `-6.3279018`.
+
+Hal yang sama berlaku untuk longitude:
+
+```
+106.6235806 ↔ 1066235806
+```
+
+Coordinate tolerance default: `0.0002°`.
+
+### 3. Date normalization
+
+```
+04 juli 2026
+2026-07-04
+2026-07-04T00:00:00
+```
+
+dipahami sebagai tanggal yang sama.
+
+### 4. Time tolerance
+
+```
+19:46:29 ↔ 19:46:00
+```
+
+dianggap sama jika selisihnya <= 60 detik.
+
+### 5. Composite fallback
+
+Jika single index gagal karena data master kotor, engine mencoba mencari kandidat menggunakan kombinasi mapped fields.
+
+Contoh:
+
+```
+longitude + date + time
+```
+
+Jika minimal dua field memberi confidence yang cukup, record masih dapat dipasangkan.
+
+## Output
+
+Sheet `Result` menambahkan:
+
+- `MATCHED_MASTER_INDEX`
+- `MATCH_SCORE`
+- `MATCH_MODE`
+- `STATUS`
+- `DIFFERENT_FIELDS`
+
+`MATCH_MODE` dapat berupa:
+
+- `coordinate_normalized`
+- `fuzzy_text`
+- `numeric_exact`
+- `date_normalized`
+- `time_tolerance`
+- `composite_fallback`
+- `not_found`
+
+Sheet `Detail` berisi audit mapping dan perbandingan tiap field. Sheet `Summary` berisi rekap.
+
+## Threshold default
 
 - Header similarity: 72%
 - Index fuzzy similarity: 82%
+- Composite match: 78%
 - Text value similarity: 90%
-- Coordinate tolerance: 0.0002 degree
+- Coordinate tolerance: 0.0002°
+- Time tolerance: 60 detik
 - Numeric tolerance: max(0.01, 0.1%)
-
-Nilai ini ada di `backend/compare.py` dan mudah diubah sesuai karakter data riil.
 
 ## Local VLM
 
@@ -59,29 +124,13 @@ Default:
 qwen2.5vl:7b
 ```
 
-## Setup
+## Menjalankan
 
 ```bash
-git clone https://github.com/dr-iskandar/reform.git
-cd reform
-
-ollama pull qwen2.5vl:7b
-ollama serve
-```
-
-Terminal lain:
-
-```bash
-python3 -m venv .venv
+git pull
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 python -m uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Buka `http://localhost:8000`.
-
-## Excel output
-
-- `Result`: generated data + match/status columns.
-- `Detail`: audit per mapped field, termasuk generated/master field, score, dan comparison mode.
-- `Summary`: rekap hasil.
